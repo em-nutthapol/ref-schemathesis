@@ -10,6 +10,7 @@
 - Array bodies for `multipart/mixed` and other non-form multipart types sent as ordered parts.
 - XML request bodies place children of `nodeType: none` objects directly in the parent element.
 - Error feedback learns integer, hex and ObjectId formats from Java and MongoDB parse errors.
+- `setup` and `teardown` hooks run once around testing in `st run` and `st fuzz`.
 
 ### :wrench: Changed
 
