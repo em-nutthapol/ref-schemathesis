@@ -61,7 +61,11 @@ SLOW_DEFAULT = {
     "microsoft.com/graph/1.0.1.json",
 }
 # Coverage of these schemas outlasts the default timeout on CI runners, yet still finishes.
-LONG_COVERAGE = {"xero.com/xero_accounting/2.9.4.json"}
+LONG_COVERAGE = {
+    "kubernetes.io/unversioned.json",
+    "kubernetes.io/v1.10.0.json",
+    "xero.com/xero_accounting/2.9.4.json",
+}
 LONG_COVERAGE_TIMEOUT = 900
 SLOW_COVERAGE = {
     "amazonaws.com/quicksight/2018-04-01.json",
