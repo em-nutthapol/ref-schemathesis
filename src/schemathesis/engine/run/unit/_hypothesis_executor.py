@@ -38,6 +38,8 @@ def run_test(
     assert phase in TESTING_PHASES
     scenario = start_scenario(operation=operation, ctx=ctx, phase=phase, suite_id=suite_id, scenario_id=scenario_id)
     recorder = scenario.recorder
+    # Without `continue-on-failure`, Hypothesis stops at a failure and shrinks it, replaying the minimal input last
+    recorder.shrinks_failures = not scenario.continue_on_failure
     state = scenario.state
     generation = scenario.generation
     non_fatal_error = scenario.non_fatal_error

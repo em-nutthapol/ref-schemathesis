@@ -191,14 +191,16 @@ def test_only_anonymous_modifications_are_308(ctx, cli, tmp_path, accepts_anonym
         "--max-examples=1",
         "--phases=fuzzing",
         "--checks=ignored_auth",
+        "--no-shrink",
     )
 
     report = load_report(path)
-    # The requests without valid credentials that reveal the fault are not test cases of their own.
+    # The requests without valid credentials that reveal the fault are not test cases of their own;
+    # the second test is Hypothesis replaying the failing case.
     assert (
         [category["code"] for fault in report["faults"]["foundFaults"] for category in fault["faultCategories"]],
         report["totalTests"],
-    ) == ([code], 1)
+    ) == ([code], 2)
 
 
 def test_same_failure_on_two_operations_is_two_faults(ctx, cli, tmp_path):

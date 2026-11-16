@@ -110,7 +110,8 @@ def test_proto_file_refused(cli, tmp_path, snapshot_cli):
 @pytest.mark.parametrize(
     ("phase", "user_id", "sent"),
     [
-        ("fuzzing", 1, ["Bearer secret", None]),
+        # Hypothesis replays the failing case once more.
+        ("fuzzing", 1, ["Bearer secret", None, "Bearer secret", None]),
         # Only the first successful call is resent without credentials.
         ("fuzzing", 403, ["Bearer secret", None, "Bearer secret", "Bearer secret"]),
         # Coverage cases skip the body hook.
@@ -128,6 +129,7 @@ def test_ignored_auth(ctx, cli, snapshot_cli, phase, user_id, sent):
             "--include-name=pkg.Users/GetUser",
             "--max-examples=3",
             f"--phases={phase}",
+            "--no-shrink",
             "-H",
             "Authorization: Bearer secret",
             hooks=module,
