@@ -325,8 +325,9 @@ def test_update_quantifier_keeps_repeat_matching_empty():
     assert update_quantifier(r"^[a-z]+(b*)*$", 4, 4) == r"^[a-z]{4}(b{0,}){0,}$"
 
 
-def test_update_quantifier_invalid_pattern():
-    assert update_quantifier("*", 1, 3) == "*"
+@pytest.mark.parametrize("pattern", ["*", "^(?:(?!)a)+$"], ids=["dangling-quantifier", "empty-lookahead"])
+def test_update_quantifier_leaves_unsupported_pattern_alone(pattern):
+    assert update_quantifier(pattern, 1, 3) == pattern
 
 
 @pytest.mark.parametrize(
@@ -1304,3 +1305,4 @@ def test_unreadable_pattern_rules_nothing_out(pattern):
     # A pattern Python cannot read says nothing about length, so generation keeps its own path.
     assert pattern_length_is_unreachable(pattern, 1, 5) is False
     assert pin_pattern_length(pattern, 1, 5) == pattern
+    assert pattern_length_bounds(pattern) == (0, None)
