@@ -42,6 +42,12 @@ from schemathesis.core.timing import Instant
 from schemathesis.core.transforms import deepclone, jsonify_python_specific_types
 from schemathesis.core.transport import prepare_urlencoded
 from schemathesis.generation import GenerationMode
+from schemathesis.generation.dictionaries import (
+    PairedDictionaries,
+    draw_paired_entries,
+    pair_operation_dictionaries,
+    paired_entries,
+)
 from schemathesis.generation.feedback import NO_FEEDBACK, FeedbackSources
 from schemathesis.generation.hypothesis import custom_formats_cache
 from schemathesis.generation.jsonschema.builder import EMPTY_STRATEGY, build
@@ -167,48 +173,51 @@ def openapi_cases(
         body_is_generated=body is NOT_SET,
     )
 
-    # Drawn in this order: path, headers, cookies, query.
-    path_parameters_, headers_, cookies_, query_ = (
-        generate_parameter(
-            location,
-            explicit,
-            operation,
-            draw,
-            ctx,
-            hooks,
-            _mode_for(location, generation_mode, negated),
-            generation_config,
-            feedback=feedback,
-            mix_examples=mix_examples,
-            # Configured auth overwrites these on the wire, so drawing them only repeats the same request.
-            exclude=feedback.auth_headers
-            if location == ParameterLocation.HEADER and generation_mode.is_positive
-            else frozenset(),
+    pairs = _dictionary_pairs(operation, generation_config)
+    # Negative cases draw pairs too, for the locations they keep valid.
+    with paired_entries(draw_paired_entries(draw(st.randoms()), pairs) if pairs else {}):
+        # Drawn in this order: path, headers, cookies, query.
+        path_parameters_, headers_, cookies_, query_ = (
+            generate_parameter(
+                location,
+                explicit,
+                operation,
+                draw,
+                ctx,
+                hooks,
+                _mode_for(location, generation_mode, negated),
+                generation_config,
+                feedback=feedback,
+                mix_examples=mix_examples,
+                # Configured auth overwrites these on the wire, so drawing them only repeats the same request.
+                exclude=feedback.auth_headers
+                if location == ParameterLocation.HEADER and generation_mode.is_positive
+                else frozenset(),
+            )
+            for location, explicit in (
+                (ParameterLocation.PATH, path_parameters),
+                (ParameterLocation.HEADER, headers),
+                (ParameterLocation.COOKIE, cookies),
+                (ParameterLocation.QUERY, query),
+            )
         )
-        for location, explicit in (
-            (ParameterLocation.PATH, path_parameters),
-            (ParameterLocation.HEADER, headers),
-            (ParameterLocation.COOKIE, cookies),
-            (ParameterLocation.QUERY, query),
-        )
-    )
 
-    if body is not NOT_SET:
-        _ensure_explicit_body_is_serializable(operation, body, media_type)
-        body_ = ValueContainer(value=body, location="body", generator=None, meta=None)
-    elif operation.body:
-        body_, media_type = _generate_body(
-            draw,
-            operation,
-            ctx,
-            hooks,
-            _mode_for(ParameterLocation.BODY, generation_mode, negated),
-            generation_config,
-            feedback=feedback,
-            mix_examples=mix_examples,
-        )
-    else:
-        body_ = ValueContainer(value=body, location="body", generator=None, meta=None)
+        if body is not NOT_SET:
+            _ensure_explicit_body_is_serializable(operation, body, media_type)
+            body_ = ValueContainer(value=body, location="body", generator=None, meta=None)
+        elif operation.body:
+            body_, media_type = _generate_body(
+                draw,
+                operation,
+                ctx,
+                hooks,
+                _mode_for(ParameterLocation.BODY, generation_mode, negated),
+                generation_config,
+                feedback=feedback,
+                mix_examples=mix_examples,
+            )
+        else:
+            body_ = ValueContainer(value=body, location="body", generator=None, meta=None)
 
     # Reject a negative case with no negated values, or skip the test when only negative mode is enabled.
     # A stateful step is exempt: rejecting it discards the whole scenario, so it goes out as a positive one.
@@ -925,6 +934,32 @@ def generate_parameter(
         dictionary_draws=generated.dictionary_draws,
         constants_draws=generated.constants_draws,
     )
+
+
+_PAIRED_LOCATIONS = (
+    ParameterLocation.PATH,
+    ParameterLocation.HEADER,
+    ParameterLocation.COOKIE,
+    ParameterLocation.QUERY,
+)
+
+
+def _dictionary_pairs(operation: APIOperation, generation_config: GenerationConfig) -> list[PairedDictionaries]:
+    schema = cast("OpenApiOperation", operation).schema
+    pairs = schema.dictionary_pairs.get(operation.label)
+    if pairs is None:
+        pairs = pair_operation_dictionaries(
+            operation,
+            parameter_properties={
+                location: cast(OpenApiParameterSet, operation.get_parameter_set(location)).schema["properties"]
+                for location in _PAIRED_LOCATIONS
+            },
+            body_schemas=(cast(OpenApiBody, item).optimized_schema for item in operation.body.items),
+            generation_config=generation_config,
+            validator_cls=schema.adapter.jsonschema_validator_cls,
+        )
+        schema.dictionary_pairs[operation.label] = pairs
+    return pairs
 
 
 def _draw_negated_locations(
