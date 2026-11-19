@@ -100,6 +100,8 @@ class EngineContext:
         "_constants_extraction",
         "_constants_extraction_lock",
         "coverage_session",
+        "held_back_cases",
+        "sending_held_back_cases",
         "auth_header_log",
         "reauth",
     )
@@ -147,6 +149,10 @@ class EngineContext:
         self.reauth = ReauthState(retry_on_statuses=schema.reauth_retry_statuses)
         # Coverage generation state lives and dies with the run.
         self.coverage_session = GenerationSession()
+        # Coverage cases a server may not survive, per operation, sent once every other coverage case went out.
+        self.held_back_cases: dict[str, list[Case]] = {}
+        # Set while a coverage pass sends the held back cases instead of generating its own.
+        self.sending_held_back_cases = False
         self.auth_header_log = AuthHeaderLog()
 
     def _repr_pretty_(self, *args: Any, **kwargs: Any) -> None: ...

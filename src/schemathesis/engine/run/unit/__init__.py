@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 import warnings
+from collections.abc import Iterator
+from dataclasses import dataclass, field
 from queue import Queue
 from typing import TYPE_CHECKING
 
@@ -26,7 +28,12 @@ from schemathesis.engine.run.unit._layered_scheduler import LayeredScheduler
 from schemathesis.engine.run.unit._pool import WORKER_FINISHED, DefaultScheduler, WorkerPool, split_results
 from schemathesis.engine.supervisor import SchedulingDirective, Verdict
 from schemathesis.generation import overrides
-from schemathesis.generation.drivers import CaseGenerator, build_coverage_generator, build_examples_generator
+from schemathesis.generation.drivers import (
+    CaseGenerator,
+    Controller,
+    build_coverage_generator,
+    build_examples_generator,
+)
 from schemathesis.generation.feedback import FeedbackSources
 from schemathesis.generation.hypothesis.builder import HypothesisTestConfig, HypothesisTestMode
 from schemathesis.generation.hypothesis.reporting import ignore_hypothesis_output
@@ -35,6 +42,7 @@ if TYPE_CHECKING:
     from schemathesis.config import PhasesConfig
     from schemathesis.engine.context import EngineContext
     from schemathesis.engine.run import Phase
+    from schemathesis.generation.case import Case
     from schemathesis.generation.overrides import Override
     from schemathesis.schemas import APIOperation
 
@@ -282,6 +290,18 @@ def _run_scenario(
         _finish_with_error(events_queue, exc, scenario_started)
 
 
+@dataclass(slots=True)
+class HeldBackCases:
+    """Coverage cases of one operation sent after every other coverage case."""
+
+    operation: APIOperation
+    cases: list[Case]
+    controller: Controller = field(default_factory=Controller)
+
+    def __iter__(self) -> Iterator[Case]:
+        return iter(self.cases)
+
+
 def _build_driver_generator(
     operation: APIOperation,
     ctx: EngineContext,
@@ -290,6 +310,8 @@ def _build_driver_generator(
     feedback: FeedbackSources,
 ) -> CaseGenerator:
     if phase == PhaseName.COVERAGE:
+        if ctx.sending_held_back_cases:
+            return HeldBackCases(operation=operation, cases=ctx.held_back_cases.pop(operation.label, []))
         return build_coverage_generator(
             ctx.config, operation, override=override, feedback=feedback, session=ctx.coverage_session
         )

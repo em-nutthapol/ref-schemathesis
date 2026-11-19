@@ -21,7 +21,7 @@ from schemathesis.engine.run.unit._errors import (
 )
 from schemathesis.engine.run.unit._scenario import finish_scenario, iter_closing_events, start_scenario
 from schemathesis.generation.hypothesis.reporting import ignore_hypothesis_output
-from schemathesis.generation.meta import order_for_lifo_execution
+from schemathesis.generation.meta import CoverageScenario, coverage_scenario, order_for_lifo_execution
 
 if TYPE_CHECKING:
     from schemathesis.engine.context import EngineContext
@@ -47,6 +47,17 @@ def _collect_within_budget(generator: CaseGenerator, ctx: EngineContext) -> list
             ctx.release_operation_slice()
             break
     return cases
+
+
+def _hold_back(cases: list[Case], ctx: EngineContext) -> tuple[list[Case], list[Case]]:
+    """Split off the cases a server may not survive, so they cannot cut off the cases of other operations."""
+    if ctx.sending_held_back_cases:
+        return cases, []
+    ready: list[Case] = []
+    held_back: list[Case] = []
+    for case in cases:
+        (held_back if coverage_scenario(case) is CoverageScenario.OVERSIZED_STRING else ready).append(case)
+    return ready, held_back
 
 
 def run_driver(
@@ -78,7 +89,8 @@ def run_driver(
         # Silence Hypothesis stderr chatter so it doesn't leak into the engine's event stream.
         with ignore_hypothesis_output():
             # Match LIFO order from Hypothesis `Phase.explicit` so engine output matches the pytest path.
-            for case in reversed(order_for_lifo_execution(_collect_within_budget(generator, ctx))):
+            cases, held_back = _hold_back(order_for_lifo_execution(_collect_within_budget(generator, ctx)), ctx)
+            for case in reversed(cases):
                 # Read the stop reason once: a second clock read could pass the deadline and fake an interrupt.
                 raise_if_stopped(ctx.stop_reason)
                 # Cases are generated before any is sent, so security learned from an earlier response is added here.
@@ -90,6 +102,9 @@ def run_driver(
                     # Already in `errors`; later cases still run and their errors surface together.
                     any_case_errored = True
                     continue
+            # A scenario cut short drops them, like any other case it never reached.
+            if held_back:
+                ctx.held_back_cases[operation.label] = held_back
     except (FailureGroup, Failure):
         status = Status.FAILURE
     except BudgetExpired:
